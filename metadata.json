@@ -1,0 +1,9 @@
+{
+  "name": "StudySync AI",
+  "description": "An intelligent study companion that reads your course material with you, automatically generating comprehensive notes and interactive flashcards to reinforce your learning.",
+  "requestFramePermissions": [
+    "display-capture",
+    "camera",
+    "microphone"
+  ]
+}

@@ -55,9 +55,14 @@ const InputSection: React.FC<InputSectionProps> = ({ onGenerate, isGenerating })
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const lastFrameDataRef = useRef<Uint8ClampedArray | null>(null);
   const intervalRef = useRef<number | null>(null);
-  // Refs for narration audio (recorded from the shared tab's audio track)
+  // Refs for narration audio (recorded from the shared tab's audio track).
+  // Finished segments are kept in pendingAudioRef until the next generation
+  // drains them, so audio recorded before "Stop Recording" is never lost.
   const audioRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const pendingAudioRef = useRef<UploadedFile[]>([]);
+  const audioFinalizeRef = useRef<Promise<void> | null>(null);
+  const [pendingAudioCount, setPendingAudioCount] = useState(0);
   // Refs for auto-generate (to access latest state in interval callback)
   const autoGenerateRef = useRef(autoGenerate);
   const autoGenerateThresholdRef = useRef(autoGenerateThreshold);
@@ -150,52 +155,65 @@ const InputSection: React.FC<InputSectionProps> = ({ onGenerate, isGenerating })
     }
   };
 
-  // Cut the audio recorded since the last generation into a standalone
-  // segment and restart the recorder for the next one.
-  const collectAudioSegment = (): Promise<UploadedFile | null> => {
-    return new Promise((resolve) => {
-      const recorder = audioRecorderRef.current;
-      if (!recorder || recorder.state === 'inactive') {
-        resolve(null);
-        return;
-      }
+  // Stop the active recorder and package what it recorded into a pending
+  // segment. The returned promise resolves once the segment is stored.
+  const finalizeCurrentRecording = (): Promise<void> => {
+    const recorder = audioRecorderRef.current;
+    if (!recorder || recorder.state === 'inactive') {
+      return audioFinalizeRef.current ?? Promise.resolve();
+    }
+    audioRecorderRef.current = null;
+    const finalize = new Promise<void>((resolve) => {
       recorder.onstop = () => {
         const chunks = audioChunksRef.current;
         audioChunksRef.current = [];
-        // recorder.stream is the audio-only stream built in startAudioRecording
-        const track = recorder.stream.getAudioTracks()[0];
-        if (track && track.readyState === 'live') {
-          startAudioRecording(recorder.stream);
-        } else {
-          audioRecorderRef.current = null;
-        }
         const blob = new Blob(chunks, { type: 'audio/webm' });
         if (blob.size === 0) {
-          resolve(null);
+          resolve();
           return;
         }
         const reader = new FileReader();
         reader.onloadend = () => {
-          resolve({
+          pendingAudioRef.current.push({
             id: Date.now().toString() + Math.random(),
             data: reader.result as string,
             mimeType: 'audio/webm',
           });
+          setPendingAudioCount(pendingAudioRef.current.length);
+          resolve();
         };
         reader.readAsDataURL(blob);
       };
       recorder.stop();
     });
+    audioFinalizeRef.current = finalize;
+    return finalize;
+  };
+
+  // Cut the audio recorded since the last generation into a pending segment
+  // and keep recording the next one.
+  const cutAudioSegment = async (): Promise<void> => {
+    const recorder = audioRecorderRef.current;
+    const audioStream = recorder && recorder.state !== 'inactive' ? recorder.stream : null;
+    await finalizeCurrentRecording();
+    if (audioStream && audioStream.getAudioTracks()[0]?.readyState === 'live') {
+      startAudioRecording(audioStream);
+    }
+  };
+
+  // Hand all pending segments to a generation and clear the buffer.
+  const drainPendingAudio = async (): Promise<UploadedFile[]> => {
+    if (audioFinalizeRef.current) await audioFinalizeRef.current;
+    const segments = pendingAudioRef.current;
+    pendingAudioRef.current = [];
+    setPendingAudioCount(0);
+    return segments;
   };
 
   const stopCapture = () => {
-    if (audioRecorderRef.current && audioRecorderRef.current.state !== 'inactive') {
-      // No onstop handler assigned here, so this just discards the recorder
-      audioRecorderRef.current.onstop = null;
-      audioRecorderRef.current.stop();
-    }
-    audioRecorderRef.current = null;
-    audioChunksRef.current = [];
+    // Keep the recorded audio: package it into a pending segment so a
+    // generate after "Stop Recording" still includes the narration.
+    finalizeCurrentRecording();
     setHasAudio(false);
     // Read the stream from a ref: the unmount cleanup effect captures the
     // first-render closure, where the `stream` state is still null.
@@ -252,10 +270,11 @@ const InputSection: React.FC<InputSectionProps> = ({ onGenerate, isGenerating })
       framesSinceLastGenerate.current = 0;
       // Use a timeout to let the state update with the new image first
       setTimeout(async () => {
-        const audio = await collectAudioSegment();
+        await cutAudioSegment();
+        const audio = await drainPendingAudio();
         onGenerateRef.current(
           "",
-          audio ? [...capturedImagesRef.current, audio] : capturedImagesRef.current,
+          [...capturedImagesRef.current, ...audio],
           customInstructionsRef.current,
           { auto: true }
         );
@@ -354,10 +373,9 @@ const InputSection: React.FC<InputSectionProps> = ({ onGenerate, isGenerating })
 
   const handleGenerateClick = async () => {
     if (mode === 'screen') {
-      // Collect the audio segment before stopCapture discards the recorder
-      const audio = await collectAudioSegment();
       stopCapture();
-      onGenerate("", audio ? [...capturedImages, audio] : capturedImages, customInstructions);
+      const audio = await drainPendingAudio();
+      onGenerate("", [...capturedImages, ...audio], customInstructions);
     } else {
       stopCapture();
       onGenerate(manualText, uploadedFiles, customInstructions, {
@@ -368,7 +386,7 @@ const InputSection: React.FC<InputSectionProps> = ({ onGenerate, isGenerating })
 
   const isGenerateDisabled = () => {
     if (isGenerating) return true;
-    if (mode === 'screen') return capturedImages.length === 0;
+    if (mode === 'screen') return capturedImages.length === 0 && pendingAudioCount === 0;
     if (mode === 'upload') return manualText.trim().length === 0 && uploadedFiles.length === 0 && youtubeUrl.trim().length === 0;
     return true;
   };
@@ -587,12 +605,17 @@ const InputSection: React.FC<InputSectionProps> = ({ onGenerate, isGenerating })
           </div>
 
           {/* Timeline for Screen Mode */}
-          {(capturedImages.length > 0 || isRecording) && (
+          {(capturedImages.length > 0 || pendingAudioCount > 0 || isRecording) && (
             <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-sm animate-in fade-in slide-in-from-bottom-4">
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
                   <Film size={16} className="text-slate-400" />
                   Captured Timeline <span className="text-xs bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full">{capturedImages.length} frames</span>
+                  {pendingAudioCount > 0 && (
+                    <span className="text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full flex items-center gap-1" title="Recorded narration that will be included in the next generation">
+                      <Volume2 size={10} /> {pendingAudioCount} audio segment{pendingAudioCount !== 1 ? 's' : ''}
+                    </span>
+                  )}
                 </h3>
                 <div className="flex items-center gap-3">
                   {capturedImages.length > 20 && (
@@ -600,9 +623,14 @@ const InputSection: React.FC<InputSectionProps> = ({ onGenerate, isGenerating })
                       Many frames — consider generating
                     </span>
                   )}
-                  {capturedImages.length > 0 && (
+                  {(capturedImages.length > 0 || pendingAudioCount > 0) && (
                     <button
-                      onClick={() => { setCapturedImages([]); framesSinceLastGenerate.current = 0; }}
+                      onClick={() => {
+                        setCapturedImages([]);
+                        framesSinceLastGenerate.current = 0;
+                        pendingAudioRef.current = [];
+                        setPendingAudioCount(0);
+                      }}
                       className="text-xs text-red-500 hover:text-red-700 flex items-center gap-1"
                     >
                       <Trash2 size={12} /> Clear all

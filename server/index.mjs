@@ -99,13 +99,14 @@ app.post('/api/generate', async (req, res) => {
       YOUR TASK:
       1. Analyze the NEW input material provided below.
       2. Generate Notes: Write notes *only* for the new information found in the input. Do not repeat what is already covered.
-         - Use ## headings for major topics and ### for sub-topics.
-         - Use bullet points for lists of facts, steps, or properties.
-         - Bold (**) key terms when first introduced.
-         - Where a concept benefits from a concrete example, provide one briefly.
-         - Where a mnemonic would aid memory, include it in italics as a "Memory tip:".
+         - Structure the new material with ## headings per major topic and ### per concept.
+         - Explain each concept plainly, bold (**) key terms when first introduced, and give a brief concrete example where one helps.
+         - Where a mnemonic would genuinely aid memory, include it in italics as a "Memory tip:".
          - Include a "## Key Definitions" section when new technical terms are introduced.
       3. Generate Flashcards: Create flashcards *only* for NEW concepts. CHECK THE EXISTING QUESTIONS LIST ABOVE. DO NOT CREATE DUPLICATE CARDS.
+         - COVERAGE RULE: scale the number of cards to the new material — one card per distinct testable point (fact, definition, relationship, procedure step, contrast). Exhaust the new material's distinct points; never stop at a round number like 10 if more remain.
+         - Mix question types: direct recall ("What is X?"), application ("When/how would you use X?"), and reasoning ("Why does X lead to Y?").
+         - One concept per card; make the front specific and unambiguous.
          - Assign difficulty: 'easy' for simple definitions, 'medium' for applied concepts, 'hard' for synthesis, comparisons, or nuanced distinctions.
       `;
     } else {
@@ -113,15 +114,16 @@ app.post('/api/generate', async (req, res) => {
 
       YOUR TASK:
       1. Analyze the provided content thoroughly. Identify core topics, definitions, key concepts, and any processes or systems described.
-      2. Generate comprehensive study notes in Markdown:
-         - Use ## headings to organize major topics and ### for sub-topics.
-         - Use bullet points for lists of facts, steps, or properties.
-         - Bold (**) key terms when first introduced.
-         - Where a concept benefits from a concrete example, provide one briefly.
-         - Where a mnemonic would aid memory, include it in italics as a "Memory tip:".
-         - Include a "## Key Definitions" section when new technical terms are introduced.
-      3. Generate high-quality flashcards:
-         - Test specific, discrete facts — one concept per card.
+      2. Generate study notes in Markdown that give the learner a solid foundation on the topic. Follow EXACTLY this structure:
+         ## Overview — 2-4 sentences framing what this topic is, why it matters, and how the pieces fit together.
+         ## Core Concepts — the main body. One ### sub-section per concept: explain it plainly, bold (**) key terms when first introduced, give a brief concrete example where one helps, and include an italic "Memory tip:" mnemonic only where it genuinely aids memory.
+         ## Key Definitions — a bulleted glossary of the technical terms introduced (term — definition).
+         ## Common Pitfalls & Misconceptions — where learners typically go wrong with this material. Omit this section if it does not apply.
+         ## Summary — 3-5 bullet takeaways that capture the foundation the learner should walk away with.
+      3. Generate flashcards:
+         - COVERAGE RULE: scale the number of cards to the material — one card per distinct testable point (fact, definition, relationship, procedure step, contrast). A single short paragraph may warrant 4-6 cards; a full lecture, long document, or video should produce 25-40 or more. Never default to a round number like 10; exhaust the material's distinct testable points.
+         - Mix question types: direct recall ("What is X?"), application ("When/how would you use X?"), and reasoning ("Why does X lead to Y?").
+         - One concept per card; make the front specific and unambiguous.
          - Assign difficulty: 'easy' for simple definitions, 'medium' for applied concepts, 'hard' for synthesis, comparisons, or nuanced distinctions.
       `;
     }

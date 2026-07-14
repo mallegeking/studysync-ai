@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Provider settings — holds API keys entered via the settings UI
+server/config.json
+
 # Local agent state
 .claude/settings.local.json
 

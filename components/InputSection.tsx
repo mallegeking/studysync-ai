@@ -1,10 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { UploadedFile } from '../types';
+import { ProviderCapabilities, UploadedFile } from '../types';
 import { Monitor, StopCircle, Play, X, Trash2, Camera, Film, Upload, FileText, File as FileIcon, Target, AlertCircle, Zap, Settings2, Volume2, VolumeX, Youtube } from 'lucide-react';
 
 interface InputSectionProps {
   onGenerate: (text: string, files: UploadedFile[], customInstructions: string, opts?: { auto?: boolean; youtubeUrl?: string }) => void;
   isGenerating: boolean;
+  providerName?: string;
+  capabilities?: ProviderCapabilities;
 }
 
 type InputMode = 'screen' | 'upload';
@@ -22,7 +24,7 @@ const SENSITIVITY_CONFIG: Record<Sensitivity, { resolution: number; threshold: n
   high:   { resolution: 128, threshold: 0.02, label: 'High — catches subtle changes' },
 };
 
-const InputSection: React.FC<InputSectionProps> = ({ onGenerate, isGenerating }) => {
+const InputSection: React.FC<InputSectionProps> = ({ onGenerate, isGenerating, providerName, capabilities }) => {
   const [mode, setMode] = useState<InputMode>('screen');
 
   // Screen Capture State
@@ -486,10 +488,17 @@ const InputSection: React.FC<InputSectionProps> = ({ onGenerate, isGenerating })
 
                 {isRecording && (
                   hasAudio ? (
+                    capabilities && !capabilities.audio ? (
+                      <div className="flex items-center gap-1.5 px-3 py-1 bg-amber-100 text-amber-700 rounded-full text-xs font-medium" title={`${providerName ?? 'The active provider'} can't process audio — narration will be ignored. Switch to Gemini in Settings to include it.`}>
+                        <Volume2 size={12} />
+                        Audio unused
+                      </div>
+                    ) : (
                     <div className="flex items-center gap-1.5 px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-medium" title="Narration audio is being captured">
                       <Volume2 size={12} />
                       Audio on
                     </div>
+                    )
                   ) : (
                     <div className="flex items-center gap-1.5 px-3 py-1 bg-slate-100 text-slate-500 rounded-full text-xs font-medium" title='No audio captured — share a browser tab and tick "Also share tab audio"'>
                       <VolumeX size={12} />
@@ -683,13 +692,16 @@ const InputSection: React.FC<InputSectionProps> = ({ onGenerate, isGenerating })
           </div>
           <input
             type="url"
-            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 text-sm"
+            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
             placeholder="https://www.youtube.com/watch?v=..."
             value={youtubeUrl}
             onChange={(e) => setYoutubeUrl(e.target.value)}
+            disabled={capabilities ? !capabilities.youtube : false}
           />
           <p className="text-xs text-slate-400 mt-2">
-            Paste a link to a public YouTube video — we'll analyze its visuals and narration directly.
+            {capabilities && !capabilities.youtube
+              ? `Not supported by ${providerName ?? 'the active provider'} — switch to Gemini in Settings (gear icon) to use YouTube links.`
+              : "Paste a link to a public YouTube video — we'll analyze its visuals and narration directly."}
           </p>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

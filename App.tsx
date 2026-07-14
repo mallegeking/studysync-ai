@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Brain, FileText, Layers, AlertCircle, Sparkles, MonitorPlay, ArrowRight, Trash2, X, GraduationCap } from 'lucide-react';
-import { FlashcardData, GeneratedContent, UploadedFile, ViewMode } from './types';
-import { generateStudyMaterial } from './services/gemini';
+import { Brain, FileText, Layers, AlertCircle, Sparkles, MonitorPlay, ArrowRight, Trash2, X, GraduationCap, Settings } from 'lucide-react';
+import { AppSettings, FlashcardData, GeneratedContent, UploadedFile, ViewMode } from './types';
+import { generateStudyMaterial, getSettings } from './services/api';
 import { reviewCard, getCardsForReview } from './services/srs';
 import InputSection from './components/InputSection';
 import NotesView from './components/NotesView';
 import FlashcardDeck from './components/FlashcardDeck';
+import SettingsModal from './components/SettingsModal';
 
 // Cards need stable ids so reviews can't credit a duplicate-text card;
 // also migrates sessions persisted before ids existed.
@@ -34,6 +35,9 @@ const App: React.FC = () => {
   });
   const [isGenerating, setIsGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [warnings, setWarnings] = useState<string[]>([]);
+  const [settings, setSettings] = useState<AppSettings | null>(null);
+  const [showSettings, setShowSettings] = useState(false);
   const [sessionRestored, setSessionRestored] = useState<boolean>(() => {
     try {
       return !!localStorage.getItem('studysync-ai-session');
@@ -41,6 +45,13 @@ const App: React.FC = () => {
       return false;
     }
   });
+
+  // Load provider settings (for capability hints and the settings modal)
+  useEffect(() => {
+    getSettings().then(setSettings).catch((err) => {
+      console.warn('Failed to load provider settings:', err);
+    });
+  }, []);
 
   // Persist generatedContent to localStorage
   useEffect(() => {
@@ -68,6 +79,7 @@ const App: React.FC = () => {
       // Pass the existing content (if any) to the service to ensure consistency/deduplication
       const result = await generateStudyMaterial(text, files, customInstructions, generatedContent, opts?.youtubeUrl);
       const newCards = withIds(result.flashcards);
+      setWarnings(result.warnings ?? []);
 
       // Functional update: state may have changed during the await (reviews
       // rated mid-flight, an earlier auto-generation), so never merge against
@@ -77,7 +89,7 @@ const App: React.FC = () => {
             markdownNotes: prev.markdownNotes + "\n\n---\n\n" + result.markdownNotes,
             flashcards: [...prev.flashcards, ...newCards]
           }
-        : { ...result, flashcards: newCards });
+        : { markdownNotes: result.markdownNotes, flashcards: newCards });
 
       if (!opts?.auto) {
         setViewMode(ViewMode.NOTES);
@@ -139,6 +151,7 @@ const App: React.FC = () => {
             </h1>
           </div>
           
+          <div className="flex items-center gap-4">
           {generatedContent && (
             <div className="flex items-center gap-4">
                 <nav className="flex items-center gap-1 sm:gap-2 bg-slate-100 p-1 rounded-lg">
@@ -194,7 +207,7 @@ const App: React.FC = () => {
                     )}
                 </button>
                 </nav>
-                <button 
+                <button
                     onClick={clearSession}
                     className="p-2 text-slate-400 hover:text-red-600 transition-colors"
                     title="Clear Session"
@@ -203,8 +216,24 @@ const App: React.FC = () => {
                 </button>
             </div>
           )}
+          <button
+              onClick={() => setShowSettings(true)}
+              className="p-2 text-slate-400 hover:text-indigo-600 transition-colors"
+              title={settings ? `AI provider: ${settings.providers[settings.activeProvider]?.name}` : 'AI provider settings'}
+          >
+              <Settings size={18} />
+          </button>
+          </div>
         </div>
       </header>
+
+      {showSettings && settings && (
+        <SettingsModal
+          settings={settings}
+          onClose={() => setShowSettings(false)}
+          onSaved={setSettings}
+        />
+      )}
 
       {/* Main Content */}
       <main className="flex-1 max-w-5xl mx-auto w-full px-4 py-8">
@@ -225,6 +254,18 @@ const App: React.FC = () => {
           </div>
         )}
 
+        {warnings.length > 0 && (
+          <div className="mb-6 bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3 text-amber-700 animate-in fade-in slide-in-from-top-2">
+            <AlertCircle className="w-5 h-5 flex-shrink-0 mt-0.5" />
+            <div className="flex-1 space-y-1">
+              {warnings.map((w, i) => <p key={i}>{w}</p>)}
+            </div>
+            <button onClick={() => setWarnings([])} className="text-amber-400 hover:text-amber-600">
+              <X size={16} />
+            </button>
+          </div>
+        )}
+
         {viewMode === ViewMode.INPUT && (
           <div className="space-y-8">
             <div className="text-center max-w-2xl mx-auto mb-10">
@@ -241,7 +282,12 @@ const App: React.FC = () => {
                   </div>
               )}
             </div>
-            <InputSection onGenerate={handleGenerate} isGenerating={isGenerating} />
+            <InputSection
+              onGenerate={handleGenerate}
+              isGenerating={isGenerating}
+              providerName={settings ? settings.providers[settings.activeProvider]?.name : undefined}
+              capabilities={settings ? settings.providers[settings.activeProvider]?.capabilities : undefined}
+            />
             
             {!generatedContent && !isGenerating && (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mt-16 text-center opacity-70">

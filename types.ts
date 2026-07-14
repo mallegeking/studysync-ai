@@ -24,6 +24,26 @@ export interface UploadedFile {
   mimeType: string;
 }
 
+export interface ProviderCapabilities {
+  images: boolean;
+  pdf: boolean;
+  audio: boolean;
+  youtube: boolean;
+}
+
+export interface ProviderInfo {
+  name: string;
+  model: string;
+  baseUrl?: string;
+  keySet: boolean;
+  capabilities: ProviderCapabilities;
+}
+
+export interface AppSettings {
+  activeProvider: string;
+  providers: Record<string, ProviderInfo>;
+}
+
 export enum ViewMode {
   INPUT = 'INPUT',
   NOTES = 'NOTES',

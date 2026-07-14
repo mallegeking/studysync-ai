@@ -23,9 +23,31 @@ const getAI = () => {
 const responseSchema = {
   type: Type.OBJECT,
   properties: {
-    markdownNotes: {
-      type: Type.STRING,
-      description: "Comprehensive study notes in Markdown format based on the input material. Use headings, bullet points, and bold text for clarity.",
+    // Notes come back as structured sections (not one markdown string):
+    // the model sometimes emits markdown without any newline characters,
+    // which renders as a single unstructured blob. Assembling the final
+    // markdown server-side makes that failure mode impossible.
+    sections: {
+      type: Type.ARRAY,
+      description: "The study notes as an ordered list of sections.",
+      items: {
+        type: Type.OBJECT,
+        properties: {
+          heading: {
+            type: Type.STRING,
+            description: "Plain-text section heading. No markdown # characters.",
+          },
+          level: {
+            type: Type.INTEGER,
+            description: "2 for top-level sections, 3 for sub-sections (individual concepts).",
+          },
+          body: {
+            type: Type.STRING,
+            description: "The section's content in Markdown. Every paragraph and every bullet point MUST be separated by real newline characters.",
+          },
+        },
+        required: ["heading", "level", "body"],
+      },
     },
     flashcards: {
       type: Type.ARRAY,
@@ -51,8 +73,27 @@ const responseSchema = {
       },
     },
   },
-  required: ["markdownNotes", "flashcards"],
+  required: ["sections", "flashcards"],
 };
+
+// Last-resort repair for a section body that arrived without any newlines:
+// re-break bullets and numbered items that follow sentence punctuation.
+const repairFlattenedBody = (body) => {
+  if (typeof body !== 'string') return '';
+  if (body.includes('\n')) return body; // has structure — leave untouched
+  return body
+    .replace(/([.!?:'")\]])\s*[*•] /g, '$1\n* ')
+    .replace(/([.!?:'")\]])\s+(\d+)\. /g, '$1\n$2. ');
+};
+
+const assembleMarkdown = (sections) =>
+  (Array.isArray(sections) ? sections : [])
+    .map((s) => {
+      const marker = Number(s.level) === 3 ? '###' : '##';
+      const heading = String(s.heading ?? '').replace(/^#+\s*/, '').trim();
+      return `${marker} ${heading}\n\n${repairFlattenedBody(s.body ?? '').trim()}`;
+    })
+    .join('\n\n');
 
 const YOUTUBE_URL_PATTERN = /^https:\/\/((www\.|m\.)?youtube\.com\/(watch\?|shorts\/|live\/)|youtu\.be\/)/;
 
@@ -98,11 +139,12 @@ app.post('/api/generate', async (req, res) => {
 
       YOUR TASK:
       1. Analyze the NEW input material provided below.
-      2. Generate Notes: Write notes *only* for the new information found in the input. Do not repeat what is already covered.
-         - Structure the new material with ## headings per major topic and ### per concept.
+      2. Generate Notes: Write notes *only* for the new information found in the input, as an ordered list of sections. Do not repeat what is already covered.
+         - One level-2 section per major new topic; one level-3 section per concept within it (its heading is the concept name).
          - Explain each concept plainly, bold (**) key terms when first introduced, and give a brief concrete example where one helps.
          - Where a mnemonic would genuinely aid memory, include it in italics as a "Memory tip:".
-         - Include a "## Key Definitions" section when new technical terms are introduced.
+         - Include a "Key Definitions" (level 2) section when new technical terms are introduced.
+         Formatting rules: headings go in the 'heading' field as plain text (never # characters, never inside the body); section bodies are Markdown with every paragraph and every bullet on its own line, separated by real newline characters.
       3. Generate Flashcards: Create flashcards *only* for NEW concepts. CHECK THE EXISTING QUESTIONS LIST ABOVE. DO NOT CREATE DUPLICATE CARDS.
          - COVERAGE RULE: scale the number of cards to the new material — one card per distinct testable point (fact, definition, relationship, procedure step, contrast). Exhaust the new material's distinct points; never stop at a round number like 10 if more remain.
          - Mix question types: direct recall ("What is X?"), application ("When/how would you use X?"), and reasoning ("Why does X lead to Y?").
@@ -114,12 +156,14 @@ app.post('/api/generate', async (req, res) => {
 
       YOUR TASK:
       1. Analyze the provided content thoroughly. Identify core topics, definitions, key concepts, and any processes or systems described.
-      2. Generate study notes in Markdown that give the learner a solid foundation on the topic. Follow EXACTLY this structure:
-         ## Overview — 2-4 sentences framing what this topic is, why it matters, and how the pieces fit together.
-         ## Core Concepts — the main body. One ### sub-section per concept: explain it plainly, bold (**) key terms when first introduced, give a brief concrete example where one helps, and include an italic "Memory tip:" mnemonic only where it genuinely aids memory.
-         ## Key Definitions — a bulleted glossary of the technical terms introduced (term — definition).
-         ## Common Pitfalls & Misconceptions — where learners typically go wrong with this material. Omit this section if it does not apply.
-         ## Summary — 3-5 bullet takeaways that capture the foundation the learner should walk away with.
+      2. Generate study notes that give the learner a solid foundation, as an ordered list of sections following EXACTLY this template:
+         - "Overview" (level 2): 2-4 sentences framing what this topic is, why it matters, and how the pieces fit together.
+         - "Core Concepts" (level 2): a one-sentence lead-in only — the substance goes in sub-sections.
+         - One level-3 section PER CONCEPT (its heading is the concept name): explain it plainly, bold (**) key terms when first introduced, give a brief concrete example where one helps, and include an italic "Memory tip:" mnemonic only where it genuinely aids memory.
+         - "Key Definitions" (level 2): a bulleted glossary of the technical terms introduced (term — definition), one bullet per line.
+         - "Common Pitfalls & Misconceptions" (level 2): where learners typically go wrong with this material. Omit this section if it does not apply.
+         - "Summary" (level 2): 3-5 bullet takeaways that capture the foundation the learner should walk away with.
+         Formatting rules: headings go in the 'heading' field as plain text (never # characters, never inside the body); section bodies are Markdown with every paragraph and every bullet on its own line, separated by real newline characters.
       3. Generate flashcards:
          - COVERAGE RULE: scale the number of cards to the material — one card per distinct testable point (fact, definition, relationship, procedure step, contrast). A single short paragraph may warrant 4-6 cards; a full lecture, long document, or video should produce 25-40 or more. Never default to a round number like 10; exhaust the material's distinct testable points.
          - Mix question types: direct recall ("What is X?"), application ("When/how would you use X?"), and reasoning ("Why does X lead to Y?").
@@ -171,7 +215,13 @@ app.post('/api/generate', async (req, res) => {
       throw new Error("No response generated from Gemini.");
     }
 
-    res.json(JSON.parse(response.text));
+    const data = JSON.parse(response.text);
+    // Client contract stays { markdownNotes, flashcards } — the sections
+    // format is internal to this endpoint.
+    res.json({
+      markdownNotes: assembleMarkdown(data.sections),
+      flashcards: data.flashcards ?? [],
+    });
   } catch (error) {
     console.error("Error generating study material:", error);
     res.status(500).json({

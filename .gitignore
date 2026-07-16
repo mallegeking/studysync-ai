@@ -17,6 +17,7 @@ server/config.json
 
 # Local agent state
 .claude/settings.local.json
+.claude/skills/
 
 # Editor directories and files
 .vscode/*

@@ -1,4 +1,4 @@
-import { AppSettings, GeneratedContent, UploadedFile, VerificationResult } from "../types";
+import { AppSettings, GeneratedContent, TutorGradeResult, TutorPreQuestion, UploadedFile, VerificationResult } from "../types";
 
 // Generation happens server-side (server/index.mjs) behind a provider
 // adapter layer (Gemini / OpenAI / Anthropic / local) so API keys never
@@ -55,6 +55,48 @@ export const verifyContent = async (content: GeneratedContent): Promise<Verifica
   return response.json();
 };
 
+export interface TutorSource {
+  text: string;
+  files: UploadedFile[];
+  youtubeUrl?: string;
+}
+
+export const startTutor = async (source: TutorSource): Promise<{ prequestions: string[]; warnings?: string[] }> => {
+  const response = await fetch("/api/tutor/start", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text: source.text, files: source.files, youtubeUrl: source.youtubeUrl }),
+  });
+  if (!response.ok) {
+    await throwResponseError(response, `Failed to start tutor session (server responded ${response.status}).`);
+  }
+  return response.json();
+};
+
+export const gradeTutor = async (
+  source: TutorSource,
+  dump: string,
+  prequestions: TutorPreQuestion[],
+  existingFronts: string[]
+): Promise<TutorGradeResult> => {
+  const response = await fetch("/api/tutor/grade", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      text: source.text,
+      files: source.files,
+      youtubeUrl: source.youtubeUrl,
+      dump,
+      prequestions,
+      existingFronts,
+    }),
+  });
+  if (!response.ok) {
+    await throwResponseError(response, `Failed to grade the session (server responded ${response.status}).`);
+  }
+  return response.json();
+};
+
 export const getSettings = async (): Promise<AppSettings> => {
   const response = await fetch("/api/settings");
   if (!response.ok) {
@@ -65,6 +107,7 @@ export const getSettings = async (): Promise<AppSettings> => {
 
 export interface SettingsUpdate {
   activeProvider?: string;
+  verificationProvider?: string;
   providers?: Record<string, { apiKey?: string; model?: string; baseUrl?: string }>;
 }
 

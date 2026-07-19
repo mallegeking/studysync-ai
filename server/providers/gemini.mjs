@@ -1,92 +1,19 @@
-import { GoogleGenAI, Type } from '@google/genai';
-import { buildPromptText, stripDataUrl } from '../prompt.mjs';
+import { GoogleGenAI } from '@google/genai';
+import { buildPromptText, responseJsonSchema, stripDataUrl } from '../prompt.mjs';
 
 export const capabilities = { images: true, pdf: true, audio: true, youtube: true };
 
-// Gemini wants its own Type-enum schema rather than plain JSON Schema.
-const responseSchema = {
-  type: Type.OBJECT,
-  properties: {
-    sections: {
-      type: Type.ARRAY,
-      description: "The study notes as an ordered list of sections.",
-      items: {
-        type: Type.OBJECT,
-        properties: {
-          heading: {
-            type: Type.STRING,
-            description: "Plain-text section heading. No markdown # characters.",
-          },
-          level: {
-            type: Type.INTEGER,
-            description: "2 for top-level sections, 3 for sub-sections (individual concepts).",
-          },
-          body: {
-            type: Type.STRING,
-            description: "The section's content in Markdown. Every paragraph and every bullet point MUST be separated by real newline characters.",
-          },
-        },
-        required: ["heading", "level", "body"],
-      },
-    },
-    flashcards: {
-      type: Type.ARRAY,
-      description: "A list of flashcards generated from the key concepts.",
-      items: {
-        type: Type.OBJECT,
-        properties: {
-          front: {
-            type: Type.STRING,
-            description: "The question or concept on the front of the card.",
-          },
-          back: {
-            type: Type.STRING,
-            description: "The answer or definition on the back of the card.",
-          },
-          difficulty: {
-            type: Type.STRING,
-            enum: ["easy", "medium", "hard"],
-            description: "The difficulty level: 'easy' for basic recall, 'medium' for applied understanding, 'hard' for synthesis or nuanced concepts.",
-          },
-        },
-        required: ["front", "back", "difficulty"],
-      },
-    },
-  },
-  required: ["sections", "flashcards"],
-};
-
-// Text-only structured call (used by /api/verify). Unlike generate() this
-// consumes the canonical JSON Schema directly via responseJsonSchema.
-export async function generateStructured({ promptText, schema, apiKey, model }) {
+// One structured-call core serves every endpoint: generation (canonical
+// schema), verification, and tutor pre-questions/grading. The SDK accepts
+// standard JSON Schema via responseJsonSchema, so the canonical schema is
+// shared with the other adapters.
+export async function generateStructured({ promptText, schema, text = '', files = [], youtubeUrl = null, apiKey, model }) {
   if (!apiKey) {
     throw new Error("No Gemini API key configured. Add one in Settings (gear icon) or set GEMINI_API_KEY in .env.local.");
   }
   const ai = new GoogleGenAI({ apiKey });
 
-  const response = await ai.models.generateContent({
-    model,
-    contents: promptText,
-    config: {
-      responseMimeType: "application/json",
-      responseJsonSchema: schema,
-      systemInstruction: "You are a helpful, accurate, and educational AI assistant.",
-    },
-  });
-
-  if (!response.text) {
-    throw new Error("No response generated from Gemini.");
-  }
-  return JSON.parse(response.text);
-}
-
-export async function generate({ text, files, customInstructions, previousContent, youtubeUrl, apiKey, model }) {
-  if (!apiKey) {
-    throw new Error("No Gemini API key configured. Add one in Settings (gear icon) or set GEMINI_API_KEY in .env.local.");
-  }
-  const ai = new GoogleGenAI({ apiKey });
-
-  const parts = [{ text: buildPromptText({ customInstructions, previousContent }) }];
+  const parts = [{ text: promptText }];
 
   if (youtubeUrl) {
     parts.push({ fileData: { fileUri: youtubeUrl } });
@@ -110,7 +37,7 @@ export async function generate({ text, files, customInstructions, previousConten
     contents: { parts },
     config: {
       responseMimeType: "application/json",
-      responseSchema,
+      responseJsonSchema: schema,
       systemInstruction: "You are a helpful, accurate, and educational AI assistant.",
     },
   });
@@ -119,4 +46,16 @@ export async function generate({ text, files, customInstructions, previousConten
     throw new Error("No response generated from Gemini.");
   }
   return JSON.parse(response.text);
+}
+
+export async function generate({ text, files, customInstructions, previousContent, youtubeUrl, apiKey, model }) {
+  return generateStructured({
+    promptText: buildPromptText({ customInstructions, previousContent }),
+    schema: responseJsonSchema,
+    text,
+    files,
+    youtubeUrl,
+    apiKey,
+    model,
+  });
 }

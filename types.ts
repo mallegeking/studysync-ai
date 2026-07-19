@@ -67,12 +67,36 @@ export interface ProviderInfo {
 
 export interface AppSettings {
   activeProvider: string;
+  // '' = verify with the active provider
+  verificationProvider: string;
   providers: Record<string, ProviderInfo>;
+}
+
+// --- Tutor mode ---
+
+// A pre-test question and the learner's cold answer (attempted before studying)
+export interface TutorPreQuestion {
+  question: string;
+  answer: string;
+}
+
+export interface KnewCorrectlyItem { concept: string; note: string; }
+export interface MisconceptionItem { concept: string; believed: string; actual: string; }
+export interface DidntKnowItem { concept: string; summary: string; }
+
+export interface TutorGradeResult {
+  knewCorrectly: KnewCorrectlyItem[];
+  misconceptions: MisconceptionItem[];
+  didntKnow: DidntKnowItem[];
+  // Gap-targeted cards, id assigned when merged into the deck
+  gapFlashcards: Omit<FlashcardData, 'id' | 'srs'>[];
+  warnings?: string[];
 }
 
 export enum ViewMode {
   INPUT = 'INPUT',
   NOTES = 'NOTES',
   FLASHCARDS = 'FLASHCARDS',
-  REVIEW = 'REVIEW'
+  REVIEW = 'REVIEW',
+  TUTOR = 'TUTOR'
 }

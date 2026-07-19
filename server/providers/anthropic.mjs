@@ -4,39 +4,9 @@ import { buildPromptText, responseJsonSchema, stripDataUrl } from '../prompt.mjs
 // The Messages API takes images and PDFs but no audio and no YouTube URLs.
 export const capabilities = { images: true, pdf: true, audio: false, youtube: false };
 
-// Text-only structured call (used by /api/verify).
-export async function generateStructured({ promptText, schema, apiKey, model }) {
-  if (!apiKey) {
-    throw new Error("No Anthropic API key configured. Add one in Settings (gear icon).");
-  }
-  const client = new Anthropic({ apiKey });
-
-  const response = await client.messages.create({
-    model,
-    max_tokens: 8000,
-    thinking: { type: 'adaptive' },
-    system: 'You are a helpful, accurate, and educational AI assistant.',
-    output_config: {
-      format: { type: 'json_schema', schema },
-    },
-    messages: [{ role: 'user', content: promptText }],
-  });
-
-  if (response.stop_reason === 'refusal') {
-    throw new Error('Claude declined to process this material. Try rephrasing or a different source.');
-  }
-  if (response.stop_reason === 'max_tokens') {
-    throw new Error('The material produced more output than fits in one response — try verifying a smaller session.');
-  }
-
-  const textBlock = response.content.find((b) => b.type === 'text');
-  if (!textBlock?.text) {
-    throw new Error('No response generated from Claude.');
-  }
-  return JSON.parse(textBlock.text);
-}
-
-export async function generate({ text, files, customInstructions, previousContent, apiKey, model }) {
+// One structured-call core serves every endpoint: generation (canonical
+// schema), verification, and tutor pre-questions/grading.
+export async function generateStructured({ promptText, schema, text = '', files = [], apiKey, model }) {
   if (!apiKey) {
     throw new Error("No Anthropic API key configured. Add one in Settings (gear icon).");
   }
@@ -61,7 +31,7 @@ export async function generate({ text, files, customInstructions, previousConten
     // Anything else (audio) should have been stripped by the caller
   }
 
-  let prompt = buildPromptText({ customInstructions, previousContent });
+  let prompt = promptText;
   if (text.trim()) {
     prompt += `\n\nUser Provided Text/Context:\n${text}`;
   }
@@ -73,7 +43,7 @@ export async function generate({ text, files, customInstructions, previousConten
     thinking: { type: 'adaptive' },
     system: 'You are a helpful, accurate, and educational AI assistant.',
     output_config: {
-      format: { type: 'json_schema', schema: responseJsonSchema },
+      format: { type: 'json_schema', schema },
     },
     messages: [{ role: 'user', content }],
   });
@@ -82,7 +52,7 @@ export async function generate({ text, files, customInstructions, previousConten
     throw new Error('Claude declined to process this material. Try rephrasing or a different source.');
   }
   if (response.stop_reason === 'max_tokens') {
-    throw new Error('The material produced more output than fits in one response — try generating from a smaller chunk.');
+    throw new Error('The material produced more output than fits in one response — try a smaller chunk.');
   }
 
   const textBlock = response.content.find((b) => b.type === 'text');
@@ -90,4 +60,15 @@ export async function generate({ text, files, customInstructions, previousConten
     throw new Error('No response generated from Claude.');
   }
   return JSON.parse(textBlock.text);
+}
+
+export async function generate({ text, files, customInstructions, previousContent, apiKey, model }) {
+  return generateStructured({
+    promptText: buildPromptText({ customInstructions, previousContent }),
+    schema: responseJsonSchema,
+    text,
+    files,
+    apiKey,
+    model,
+  });
 }

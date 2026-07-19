@@ -2,6 +2,7 @@ import express from 'express';
 import dotenv from 'dotenv';
 import { assembleMarkdown } from './prompt.mjs';
 import { verifyJsonSchema, buildVerifyPrompt, normalizeVerification } from './verify.mjs';
+import { prequestionsJsonSchema, buildPrequestionsPrompt, normalizePrequestions, gradeJsonSchema, buildGradePrompt, normalizeGrade } from './tutor.mjs';
 import { loadSettings, saveSettings, resolveApiKey, sanitizeSettings, PROVIDER_NAMES } from './settings.mjs';
 import * as gemini from './providers/gemini.mjs';
 import * as anthropic from './providers/anthropic.mjs';
@@ -68,11 +69,14 @@ app.get('/api/settings', (req, res) => {
 
 app.put('/api/settings', (req, res) => {
   try {
-    const { activeProvider, providers } = req.body ?? {};
+    const { activeProvider, verificationProvider, providers } = req.body ?? {};
     if (activeProvider && !PROVIDERS[activeProvider]) {
       return res.status(400).json({ error: `Unknown provider: ${activeProvider}` });
     }
-    const saved = saveSettings({ activeProvider, providers });
+    if (verificationProvider && !PROVIDERS[verificationProvider]) {
+      return res.status(400).json({ error: `Unknown verification provider: ${verificationProvider}` });
+    }
+    const saved = saveSettings({ activeProvider, verificationProvider, providers });
     res.json(sanitizeSettings(saved, capabilitiesByProvider));
   } catch (error) {
     console.error('Failed to save settings:', error);
@@ -131,6 +135,107 @@ app.post('/api/generate', async (req, res) => {
   }
 });
 
+// Tutor mode step 1: pre-test questions from the source, attempted cold
+// before studying (pretesting effect). Uses the active provider.
+app.post('/api/tutor/start', async (req, res) => {
+  try {
+    const { text = '', files = [], youtubeUrl = null } = req.body ?? {};
+
+    if (youtubeUrl && !YOUTUBE_URL_PATTERN.test(youtubeUrl)) {
+      return res.status(400).json({
+        error: "That doesn't look like a YouTube link. Use a URL like https://www.youtube.com/watch?v=... or https://youtu.be/...",
+      });
+    }
+
+    const settings = loadSettings();
+    const providerId = settings.activeProvider;
+    const { adapter, capabilities } = PROVIDERS[providerId];
+    const providerName = PROVIDER_NAMES[providerId];
+    const providerConfig = settings.providers[providerId];
+
+    const stripped = stripUnsupportedInputs({ files, youtubeUrl }, capabilities, providerName);
+
+    if (!text.trim() && stripped.files.length === 0 && !stripped.youtubeUrl) {
+      return res.status(400).json({
+        error: `Nothing ${providerName} can process was left after removing unsupported inputs. ${stripped.warnings.join(' ')}`,
+      });
+    }
+
+    const raw = await adapter.generateStructured({
+      promptText: buildPrequestionsPrompt(),
+      schema: prequestionsJsonSchema,
+      schemaName: 'pretest_questions',
+      text,
+      files: stripped.files,
+      youtubeUrl: stripped.youtubeUrl,
+      apiKey: resolveApiKey(settings, providerId),
+      model: providerConfig.model,
+      baseUrl: providerConfig.baseUrl,
+      isLocal: providerId === 'local',
+    });
+
+    res.json({
+      prequestions: normalizePrequestions(raw),
+      warnings: stripped.warnings,
+    });
+  } catch (error) {
+    console.error('Error generating pre-test questions:', error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Failed to generate pre-test questions. Please try again.',
+    });
+  }
+});
+
+// Tutor mode step 2: grade the brain dump + cold answers against the
+// source, bucket the findings, and generate gap-targeted flashcards.
+app.post('/api/tutor/grade', async (req, res) => {
+  try {
+    const { dump = '', prequestions = [], text = '', files = [], youtubeUrl = null, existingFronts = [] } = req.body ?? {};
+
+    const settings = loadSettings();
+    const providerId = settings.activeProvider;
+    const { adapter, capabilities } = PROVIDERS[providerId];
+    const providerName = PROVIDER_NAMES[providerId];
+    const providerConfig = settings.providers[providerId];
+
+    const stripped = stripUnsupportedInputs({ files, youtubeUrl }, capabilities, providerName);
+
+    // Without source material there is no ground truth to grade against
+    if (!text.trim() && stripped.files.length === 0 && !stripped.youtubeUrl) {
+      return res.status(400).json({
+        error: `No source material available to grade against. ${stripped.warnings.join(' ')}`.trim(),
+      });
+    }
+
+    const raw = await adapter.generateStructured({
+      promptText: buildGradePrompt({
+        dump,
+        prequestions: Array.isArray(prequestions) ? prequestions : [],
+        existingFronts: Array.isArray(existingFronts) ? existingFronts : [],
+      }),
+      schema: gradeJsonSchema,
+      schemaName: 'tutor_grade',
+      text,
+      files: stripped.files,
+      youtubeUrl: stripped.youtubeUrl,
+      apiKey: resolveApiKey(settings, providerId),
+      model: providerConfig.model,
+      baseUrl: providerConfig.baseUrl,
+      isLocal: providerId === 'local',
+    });
+
+    res.json({
+      ...normalizeGrade(raw),
+      warnings: stripped.warnings,
+    });
+  } catch (error) {
+    console.error('Error grading tutor session:', error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Failed to grade the session. Please try again.',
+    });
+  }
+});
+
 // On-demand fact check of already-generated content. Content-only: the
 // original sources are gone by now, so flags come from the model's general
 // knowledge (the client UI discloses this).
@@ -144,7 +249,9 @@ app.post('/api/verify', async (req, res) => {
     }
 
     const settings = loadSettings();
-    const providerId = settings.activeProvider;
+    // A dedicated verification provider (if set) checks with independently
+    // trained knowledge — errors correlate less than self-verification
+    const providerId = settings.verificationProvider || settings.activeProvider;
     const { adapter } = PROVIDERS[providerId];
     const providerConfig = settings.providers[providerId];
 

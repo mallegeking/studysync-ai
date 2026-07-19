@@ -15,6 +15,9 @@ const ENV_KEYS = {
 
 const DEFAULTS = {
   activeProvider: 'gemini',
+  // '' = verify with the active provider; a provider id = always verify
+  // with that one (cross-model checking catches correlated blind spots)
+  verificationProvider: '',
   providers: {
     gemini: { apiKey: '', model: 'gemini-2.5-flash' },
     openai: { apiKey: '', model: 'gpt-5-mini' },
@@ -39,6 +42,7 @@ export function loadSettings() {
   }
   const merged = {
     activeProvider: stored.activeProvider ?? DEFAULTS.activeProvider,
+    verificationProvider: stored.verificationProvider ?? DEFAULTS.verificationProvider,
     providers: {},
   };
   for (const id of Object.keys(DEFAULTS.providers)) {
@@ -47,6 +51,9 @@ export function loadSettings() {
   if (!merged.providers[merged.activeProvider]) {
     merged.activeProvider = DEFAULTS.activeProvider;
   }
+  if (merged.verificationProvider && !merged.providers[merged.verificationProvider]) {
+    merged.verificationProvider = DEFAULTS.verificationProvider;
+  }
   return merged;
 }
 
@@ -54,10 +61,14 @@ export function saveSettings(update) {
   const current = loadSettings();
   const next = {
     activeProvider: update.activeProvider ?? current.activeProvider,
+    verificationProvider: update.verificationProvider ?? current.verificationProvider,
     providers: { ...current.providers },
   };
   if (!next.providers[next.activeProvider]) {
     throw new Error(`Unknown provider: ${next.activeProvider}`);
+  }
+  if (next.verificationProvider && !next.providers[next.verificationProvider]) {
+    throw new Error(`Unknown verification provider: ${next.verificationProvider}`);
   }
   for (const [id, patch] of Object.entries(update.providers ?? {})) {
     if (!next.providers[id] || typeof patch !== 'object' || patch === null) continue;
@@ -91,5 +102,9 @@ export function sanitizeSettings(settings, capabilitiesByProvider) {
       capabilities: capabilitiesByProvider[id],
     };
   }
-  return { activeProvider: settings.activeProvider, providers };
+  return {
+    activeProvider: settings.activeProvider,
+    verificationProvider: settings.verificationProvider,
+    providers,
+  };
 }

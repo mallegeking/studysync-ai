@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { AppSettings } from '../types';
 import { updateSettings } from '../services/api';
-import { X, Check, Minus, Image as ImageIcon, FileText, Volume2, Youtube, KeyRound, AlertCircle } from 'lucide-react';
+import { X, Check, Minus, Image as ImageIcon, FileText, Volume2, Youtube, KeyRound, AlertCircle, ShieldCheck } from 'lucide-react';
 
 interface SettingsModalProps {
   settings: AppSettings;
@@ -20,6 +20,7 @@ const CAPABILITY_LABELS: { key: 'images' | 'pdf' | 'audio' | 'youtube'; label: s
 
 const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onClose, onSaved }) => {
   const [selected, setSelected] = useState(settings.activeProvider);
+  const [verifyWith, setVerifyWith] = useState(settings.verificationProvider ?? '');
   const [drafts, setDrafts] = useState<Record<string, { apiKey: string; model: string; baseUrl: string }>>(() => {
     const initial: Record<string, { apiKey: string; model: string; baseUrl: string }> = {};
     for (const id of Object.keys(settings.providers)) {
@@ -47,7 +48,7 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onClose, onSave
           ...(draft.apiKey.trim() ? { apiKey: draft.apiKey.trim() } : {}),
         };
       }
-      const saved = await updateSettings({ activeProvider: selected, providers });
+      const saved = await updateSettings({ activeProvider: selected, verificationProvider: verifyWith, providers });
       onSaved(saved);
       onClose();
     } catch (err) {
@@ -150,6 +151,28 @@ const SettingsModal: React.FC<SettingsModalProps> = ({ settings, onClose, onSave
               Stored on your machine in server/config.json — never sent to the browser.
             </p>
           </div>
+        </div>
+
+        {/* Verification provider */}
+        <div className="mb-6 pt-5 border-t border-slate-100">
+          <label className="block text-sm font-medium text-slate-600 mb-1.5 flex items-center gap-1.5">
+            <ShieldCheck size={13} /> Verify with
+          </label>
+          <select
+            value={verifyWith}
+            onChange={(e) => setVerifyWith(e.target.value)}
+            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50"
+          >
+            <option value="">Same as active provider</option>
+            {PROVIDER_ORDER.filter(id => settings.providers[id]).map((id) => (
+              <option key={id} value={id}>
+                {settings.providers[id].name}{settings.providers[id].keySet ? '' : ' (no key set)'}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-slate-400 mt-1">
+            Which provider runs the fact-check pass. A different provider than the one that generated the notes won't share its blind spots.
+          </p>
         </div>
 
         {error && (

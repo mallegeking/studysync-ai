@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Brain, FileText, Layers, AlertCircle, Sparkles, MonitorPlay, ArrowRight, Trash2, X, GraduationCap, Settings } from 'lucide-react';
+import { Brain, FileText, Layers, AlertCircle, Sparkles, MonitorPlay, ArrowRight, Trash2, X, GraduationCap, Settings, Lightbulb } from 'lucide-react';
 import { AppSettings, CardFlag, FlashcardData, GeneratedContent, UploadedFile, ViewMode } from './types';
 import { generateStudyMaterial, getSettings, verifyContent } from './services/api';
 import { reviewCard, getCardsForReview } from './services/srs';
@@ -7,6 +7,7 @@ import InputSection from './components/InputSection';
 import NotesView from './components/NotesView';
 import FlashcardDeck from './components/FlashcardDeck';
 import SettingsModal from './components/SettingsModal';
+import TutorView from './components/TutorView';
 
 // Cards need stable ids so reviews can't credit a duplicate-text card;
 // also migrates sessions persisted before ids existed.
@@ -169,6 +170,26 @@ const App: React.FC = () => {
     return map;
   }, [generatedContent]);
 
+  // Merge tutor-generated study material into the session (same append
+  // semantics as handleGenerate)
+  const mergeStudyMaterial = (markdownNotes: string, flashcards: FlashcardData[]) => {
+    const newCards = withIds(flashcards);
+    setGeneratedContent(prev => prev
+      ? {
+          ...prev,
+          markdownNotes: prev.markdownNotes ? prev.markdownNotes + "\n\n---\n\n" + markdownNotes : markdownNotes,
+          flashcards: [...prev.flashcards, ...newCards],
+        }
+      : { markdownNotes, flashcards: newCards });
+  };
+
+  const addGapCards = (cards: Omit<FlashcardData, 'id'>[]) => {
+    const newCards = cards.map(c => ({ ...c, id: crypto.randomUUID() }));
+    setGeneratedContent(prev => prev
+      ? { ...prev, flashcards: [...prev.flashcards, ...newCards] }
+      : { markdownNotes: '', flashcards: newCards });
+  };
+
   const clearSession = () => {
       if(confirm("Are you sure you want to clear your current session? All notes and flashcards will be lost.")) {
           setGeneratedContent(null);
@@ -284,6 +305,18 @@ const App: React.FC = () => {
                 </button>
             </div>
           )}
+          <button
+              onClick={() => setViewMode(ViewMode.TUTOR)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                viewMode === ViewMode.TUTOR
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-indigo-600 hover:bg-indigo-50'
+              }`}
+              title="Tutor mode: active recall on new material"
+          >
+              <Lightbulb size={16} />
+              <span className="hidden sm:inline">Tutor</span>
+          </button>
           <button
               onClick={() => setShowSettings(true)}
               className="p-2 text-slate-400 hover:text-indigo-600 transition-colors"
@@ -448,6 +481,15 @@ const App: React.FC = () => {
               onAddCard={handleAddCard}
             />
           </div>
+        )}
+
+        {viewMode === ViewMode.TUTOR && (
+          <TutorView
+            existingFronts={generatedContent?.flashcards.map(f => f.front) ?? []}
+            onStudyMaterial={mergeStudyMaterial}
+            onAddGapCards={addGapCards}
+            onExit={() => setViewMode(generatedContent ? ViewMode.NOTES : ViewMode.INPUT)}
+          />
         )}
 
         {viewMode === ViewMode.REVIEW && generatedContent && (

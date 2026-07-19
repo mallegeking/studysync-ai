@@ -13,9 +13,35 @@ export interface FlashcardData {
   srs?: SrsData;
 }
 
+// A claim in the notes the verification pass considers likely wrong.
+// `excerpt` is the model's verbatim quote from markdownNotes — used to
+// locate and highlight the passage; if it no longer matches (e.g. after
+// an edit), the flag degrades to list-only display.
+export interface NoteFlag {
+  excerpt: string;
+  claim: string;
+  reason: string;
+  severity: 'low' | 'medium' | 'high';
+}
+
+export interface CardFlag {
+  cardId: string;
+  reason: string;
+  severity: 'low' | 'medium' | 'high';
+}
+
+export interface VerificationResult {
+  noteFlags: NoteFlag[];
+  cardFlags: CardFlag[];
+  verifiedAt: string; // ISO timestamp
+  provider: string;
+  model: string;
+}
+
 export interface GeneratedContent {
   markdownNotes: string;
   flashcards: FlashcardData[];
+  verification?: VerificationResult;
 }
 
 export interface UploadedFile {

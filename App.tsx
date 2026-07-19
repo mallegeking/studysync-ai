@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Brain, FileText, Layers, AlertCircle, Sparkles, MonitorPlay, ArrowRight, Trash2, X, GraduationCap, Settings } from 'lucide-react';
-import { AppSettings, FlashcardData, GeneratedContent, UploadedFile, ViewMode } from './types';
-import { generateStudyMaterial, getSettings } from './services/api';
+import { AppSettings, CardFlag, FlashcardData, GeneratedContent, UploadedFile, ViewMode } from './types';
+import { generateStudyMaterial, getSettings, verifyContent } from './services/api';
 import { reviewCard, getCardsForReview } from './services/srs';
 import InputSection from './components/InputSection';
 import NotesView from './components/NotesView';
@@ -34,6 +34,7 @@ const App: React.FC = () => {
     }
   });
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -83,9 +84,12 @@ const App: React.FC = () => {
 
       // Functional update: state may have changed during the await (reviews
       // rated mid-flight, an earlier auto-generation), so never merge against
-      // the closure snapshot.
+      // the closure snapshot. Existing verification is kept: prior markdown
+      // survives verbatim above the separator, so its flags still apply, and
+      // verifiedAt shows the new material hasn't been checked yet.
       setGeneratedContent(prev => prev
         ? {
+            ...prev,
             markdownNotes: prev.markdownNotes + "\n\n---\n\n" + result.markdownNotes,
             flashcards: [...prev.flashcards, ...newCards]
           }
@@ -100,6 +104,70 @@ const App: React.FC = () => {
       setIsGenerating(false);
     }
   };
+
+  const handleVerify = async () => {
+    if (!generatedContent || isVerifying) return;
+    setIsVerifying(true);
+    setError(null);
+    try {
+      const result = await verifyContent(generatedContent);
+      setGeneratedContent(prev => prev ? { ...prev, verification: result } : prev);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Verification failed. Please try again.');
+    } finally {
+      setIsVerifying(false);
+    }
+  };
+
+  const handleUpdateNotes = (markdown: string) => {
+    // Verification is kept: excerpts that no longer match degrade to
+    // list-only display in the flags panel.
+    setGeneratedContent(prev => prev ? { ...prev, markdownNotes: markdown } : prev);
+  };
+
+  const handleClearVerification = () => {
+    setGeneratedContent(prev => prev ? { ...prev, verification: undefined } : prev);
+  };
+
+  const handleUpdateCard = (updated: FlashcardData) => {
+    // The card's content changed, so any accuracy flag on it is void
+    setGeneratedContent(prev => prev
+      ? {
+          ...prev,
+          flashcards: prev.flashcards.map(card => card.id === updated.id ? updated : card),
+          verification: prev.verification
+            ? { ...prev.verification, cardFlags: prev.verification.cardFlags.filter(f => f.cardId !== updated.id) }
+            : undefined,
+        }
+      : prev);
+  };
+
+  const handleDeleteCard = (id: string) => {
+    setGeneratedContent(prev => prev
+      ? {
+          ...prev,
+          flashcards: prev.flashcards.filter(card => card.id !== id),
+          verification: prev.verification
+            ? { ...prev.verification, cardFlags: prev.verification.cardFlags.filter(f => f.cardId !== id) }
+            : undefined,
+        }
+      : prev);
+  };
+
+  const handleAddCard = (card: Omit<FlashcardData, 'id'>) => {
+    // No srs data yet, so the card is due immediately — same as generated ones
+    setGeneratedContent(prev => prev
+      ? { ...prev, flashcards: [...prev.flashcards, { ...card, id: crypto.randomUUID() }] }
+      : prev);
+  };
+
+  const cardFlagsById = useMemo(() => {
+    const map: Record<string, CardFlag> = {};
+    for (const flag of generatedContent?.verification?.cardFlags ?? []) {
+      map[flag.cardId] = flag;
+    }
+    return map;
+  }, [generatedContent]);
 
   const clearSession = () => {
       if(confirm("Are you sure you want to clear your current session? All notes and flashcards will be lost.")) {
@@ -349,7 +417,14 @@ const App: React.FC = () => {
                 Practice Flashcards <ArrowRight size={18} />
               </button>
             </div>
-            <NotesView markdown={generatedContent.markdownNotes} />
+            <NotesView
+              markdown={generatedContent.markdownNotes}
+              verification={generatedContent.verification}
+              isVerifying={isVerifying}
+              onVerify={handleVerify}
+              onSave={handleUpdateNotes}
+              onClearVerification={handleClearVerification}
+            />
           </div>
         )}
 
@@ -364,7 +439,14 @@ const App: React.FC = () => {
                 Review Notes <ArrowRight size={18} />
               </button>
             </div>
-            <FlashcardDeck cards={generatedContent.flashcards} mode="browse" />
+            <FlashcardDeck
+              cards={generatedContent.flashcards}
+              mode="browse"
+              cardFlags={cardFlagsById}
+              onUpdateCard={handleUpdateCard}
+              onDeleteCard={handleDeleteCard}
+              onAddCard={handleAddCard}
+            />
           </div>
         )}
 

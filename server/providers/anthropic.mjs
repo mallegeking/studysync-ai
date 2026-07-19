@@ -4,6 +4,38 @@ import { buildPromptText, responseJsonSchema, stripDataUrl } from '../prompt.mjs
 // The Messages API takes images and PDFs but no audio and no YouTube URLs.
 export const capabilities = { images: true, pdf: true, audio: false, youtube: false };
 
+// Text-only structured call (used by /api/verify).
+export async function generateStructured({ promptText, schema, apiKey, model }) {
+  if (!apiKey) {
+    throw new Error("No Anthropic API key configured. Add one in Settings (gear icon).");
+  }
+  const client = new Anthropic({ apiKey });
+
+  const response = await client.messages.create({
+    model,
+    max_tokens: 8000,
+    thinking: { type: 'adaptive' },
+    system: 'You are a helpful, accurate, and educational AI assistant.',
+    output_config: {
+      format: { type: 'json_schema', schema },
+    },
+    messages: [{ role: 'user', content: promptText }],
+  });
+
+  if (response.stop_reason === 'refusal') {
+    throw new Error('Claude declined to process this material. Try rephrasing or a different source.');
+  }
+  if (response.stop_reason === 'max_tokens') {
+    throw new Error('The material produced more output than fits in one response — try verifying a smaller session.');
+  }
+
+  const textBlock = response.content.find((b) => b.type === 'text');
+  if (!textBlock?.text) {
+    throw new Error('No response generated from Claude.');
+  }
+  return JSON.parse(textBlock.text);
+}
+
 export async function generate({ text, files, customInstructions, previousContent, apiKey, model }) {
   if (!apiKey) {
     throw new Error("No Anthropic API key configured. Add one in Settings (gear icon).");

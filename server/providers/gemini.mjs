@@ -56,6 +56,30 @@ const responseSchema = {
   required: ["sections", "flashcards"],
 };
 
+// Text-only structured call (used by /api/verify). Unlike generate() this
+// consumes the canonical JSON Schema directly via responseJsonSchema.
+export async function generateStructured({ promptText, schema, apiKey, model }) {
+  if (!apiKey) {
+    throw new Error("No Gemini API key configured. Add one in Settings (gear icon) or set GEMINI_API_KEY in .env.local.");
+  }
+  const ai = new GoogleGenAI({ apiKey });
+
+  const response = await ai.models.generateContent({
+    model,
+    contents: promptText,
+    config: {
+      responseMimeType: "application/json",
+      responseJsonSchema: schema,
+      systemInstruction: "You are a helpful, accurate, and educational AI assistant.",
+    },
+  });
+
+  if (!response.text) {
+    throw new Error("No response generated from Gemini.");
+  }
+  return JSON.parse(response.text);
+}
+
 export async function generate({ text, files, customInstructions, previousContent, youtubeUrl, apiKey, model }) {
   if (!apiKey) {
     throw new Error("No Gemini API key configured. Add one in Settings (gear icon) or set GEMINI_API_KEY in .env.local.");

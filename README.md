@@ -8,8 +8,25 @@ A personal study companion that turns whatever you're studying into structured n
 - **Multiple input types.** PDFs, images, pasted text, and YouTube links all work alongside screen capture.
 - **Structured notes.** Notes come back in a consistent sectioned format (summary, core concepts, definitions, examples) rendered as clean markdown.
 - **Spaced-repetition flashcards.** Cards are scheduled with the SM-2 algorithm. Failed cards stay due for same-session relearning, and your deck persists locally between sessions.
+- **Fact verification.** An on-demand second AI pass reviews your notes and flashcards for likely misinformation — suspect passages get highlighted inline with an explanation, and questionable cards get a "Check accuracy" badge. (It checks against the model's general knowledge, so it's a plausibility check, not source verification.)
+- **Editing.** Notes are editable as raw markdown, and flashcards can be edited, deleted, or added by hand — manual cards enter the same review schedule as generated ones.
+- **Export.** Download your notes as Markdown (drops straight into Obsidian) or plain text, and your flashcards as CSV for Anki.
 - **Multi-provider AI.** Works with Google Gemini, Anthropic Claude, OpenAI, or any local OpenAI-compatible runtime (Ollama, LM Studio, and similar). Switch providers and manage keys from the in-app settings.
 - **Graceful degradation.** If the active provider can't handle an input type (say, audio on a non-Gemini model), the server strips it and warns you instead of failing the generation.
+
+## Screenshots
+
+**Live capture** — share your screen and StudySync snapshots what you read:
+
+![Live capture view](screenshots/live-capture.png)
+
+**Upload & paste** — PDFs, images, text, or a YouTube link:
+
+![Upload and paste view](screenshots/upload-and-paste.png)
+
+**Generated study notes:**
+
+![Study notes view](screenshots/study-notes.png)
 
 ## How it works
 

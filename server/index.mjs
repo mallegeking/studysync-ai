@@ -1,6 +1,7 @@
 import express from 'express';
 import dotenv from 'dotenv';
 import { assembleMarkdown } from './prompt.mjs';
+import { verifyJsonSchema, buildVerifyPrompt, normalizeVerification } from './verify.mjs';
 import { loadSettings, saveSettings, resolveApiKey, sanitizeSettings, PROVIDER_NAMES } from './settings.mjs';
 import * as gemini from './providers/gemini.mjs';
 import * as anthropic from './providers/anthropic.mjs';
@@ -126,6 +127,47 @@ app.post('/api/generate', async (req, res) => {
     console.error('Error generating study material:', error);
     res.status(500).json({
       error: error instanceof Error ? error.message : 'Failed to generate study materials. Please try again.',
+    });
+  }
+});
+
+// On-demand fact check of already-generated content. Content-only: the
+// original sources are gone by now, so flags come from the model's general
+// knowledge (the client UI discloses this).
+app.post('/api/verify', async (req, res) => {
+  try {
+    const { markdownNotes = '', flashcards = [] } = req.body ?? {};
+    const cards = Array.isArray(flashcards) ? flashcards : [];
+
+    if (!markdownNotes.trim() && cards.length === 0) {
+      return res.status(400).json({ error: 'Nothing to verify.' });
+    }
+
+    const settings = loadSettings();
+    const providerId = settings.activeProvider;
+    const { adapter } = PROVIDERS[providerId];
+    const providerConfig = settings.providers[providerId];
+
+    const raw = await adapter.generateStructured({
+      promptText: buildVerifyPrompt({ markdownNotes, flashcards: cards }),
+      schema: verifyJsonSchema,
+      schemaName: 'verification_result',
+      apiKey: resolveApiKey(settings, providerId),
+      model: providerConfig.model,
+      baseUrl: providerConfig.baseUrl,
+      isLocal: providerId === 'local',
+    });
+
+    res.json({
+      ...normalizeVerification(raw, cards),
+      verifiedAt: new Date().toISOString(),
+      provider: PROVIDER_NAMES[providerId],
+      model: providerConfig.model,
+    });
+  } catch (error) {
+    console.error('Error verifying study material:', error);
+    res.status(500).json({
+      error: error instanceof Error ? error.message : 'Verification failed. Please try again.',
     });
   }
 });

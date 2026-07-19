@@ -1,4 +1,4 @@
-import { AppSettings, GeneratedContent, UploadedFile } from "../types";
+import { AppSettings, GeneratedContent, UploadedFile, VerificationResult } from "../types";
 
 // Generation happens server-side (server/index.mjs) behind a provider
 // adapter layer (Gemini / OpenAI / Anthropic / local) so API keys never
@@ -36,6 +36,21 @@ export const generateStudyMaterial = async (
 
   if (!response.ok) {
     await throwResponseError(response, `Failed to generate study materials (server responded ${response.status}).`);
+  }
+  return response.json();
+};
+
+export const verifyContent = async (content: GeneratedContent): Promise<VerificationResult> => {
+  const response = await fetch("/api/verify", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      markdownNotes: content.markdownNotes,
+      flashcards: content.flashcards.map(({ id, front, back }) => ({ id, front, back })),
+    }),
+  });
+  if (!response.ok) {
+    await throwResponseError(response, `Verification failed (server responded ${response.status}).`);
   }
   return response.json();
 };

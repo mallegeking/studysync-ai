@@ -44,6 +44,30 @@ export interface GeneratedContent {
   verification?: VerificationResult;
 }
 
+// A session is one study set (notes + deck + verification) with a name.
+export interface Session {
+  id: string;
+  name: string;
+  createdAt: string; // ISO
+  updatedAt: string; // ISO
+  content: GeneratedContent;
+}
+
+// A subject groups related sessions (e.g. "AI" holding "Agents", "RAG").
+export interface Subject {
+  id: string;
+  name: string;
+  createdAt: string; // ISO
+  sessions: Session[];
+}
+
+// The whole persisted library plus the current navigation location.
+export interface StudyStore {
+  subjects: Subject[];
+  activeSubjectId: string | null;
+  activeSessionId: string | null;
+}
+
 export interface UploadedFile {
   id: string;
   data: string; // Base64

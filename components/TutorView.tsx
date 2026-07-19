@@ -4,7 +4,7 @@ import { startTutor, gradeTutor, generateStudyMaterial, TutorSource } from '../s
 import NotesView from './NotesView';
 import {
   GraduationCap, Youtube, Upload, X, AlertCircle, Loader2, ArrowRight, ArrowLeft,
-  Brain, CheckCircle2, XCircle, HelpCircle, Sparkles, Plus,
+  Brain, CheckCircle2, XCircle, HelpCircle, Sparkles, Plus, Minus, SkipForward,
 } from 'lucide-react';
 
 interface TutorViewProps {
@@ -33,6 +33,7 @@ const TutorView: React.FC<TutorViewProps> = ({ existingFronts, onStudyMaterial, 
   const [studyMarkdown, setStudyMarkdown] = useState('');
   const [grade, setGrade] = useState<TutorGradeResult | null>(null);
   const [gapCardsAdded, setGapCardsAdded] = useState(false);
+  const [recallSkipped, setRecallSkipped] = useState(false);
 
   const source = (): TutorSource => ({ text, files, youtubeUrl: youtubeUrl.trim() || undefined });
   const sourceEmpty = !text.trim() && files.length === 0 && !youtubeUrl.trim();
@@ -103,6 +104,13 @@ const TutorView: React.FC<TutorViewProps> = ({ existingFronts, onStudyMaterial, 
     setGapCardsAdded(true);
   };
 
+  // Bypass the recall step and go straight to studying (from source or pretest).
+  // Skipping from source also avoids the pre-question generation call.
+  const skipRecall = () => {
+    setRecallSkipped(true);
+    startStudying();
+  };
+
   const setAnswer = (i: number, answer: string) =>
     setPrequestions(prev => prev.map((q, idx) => idx === i ? { ...q, answer } : q));
 
@@ -119,16 +127,18 @@ const TutorView: React.FC<TutorViewProps> = ({ existingFronts, onStudyMaterial, 
       <div className="flex items-center justify-center gap-2 mb-8">
         {(['source', 'pretest', 'study', 'confrontation'] as Stage[]).map((s, i) => {
           const active = stage === s;
-          const done = stageMeta[s].n < stageMeta[stage].n;
+          // When recall is skipped, the pretest and confrontation steps are bypassed
+          const skipped = recallSkipped && (s === 'pretest' || s === 'confrontation');
+          const done = !skipped && stageMeta[s].n < stageMeta[stage].n;
           return (
             <React.Fragment key={s}>
               <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-all ${
-                active ? 'bg-indigo-600 text-white' : done ? 'bg-indigo-100 text-indigo-600' : 'bg-slate-100 text-slate-400'
+                active ? 'bg-indigo-600 text-white' : done ? 'bg-indigo-100 text-indigo-600' : skipped ? 'bg-slate-50 text-slate-300' : 'bg-slate-100 text-slate-400'
               }`}>
-                <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs ${active ? 'bg-white/20' : done ? 'bg-indigo-200' : 'bg-slate-200'}`}>
-                  {done ? <CheckCircle2 size={13} /> : stageMeta[s].n}
+                <span className={`w-5 h-5 rounded-full flex items-center justify-center text-xs ${active ? 'bg-white/20' : done ? 'bg-indigo-200' : skipped ? 'bg-slate-100' : 'bg-slate-200'}`}>
+                  {done ? <CheckCircle2 size={13} /> : skipped ? <Minus size={13} /> : stageMeta[s].n}
                 </span>
-                <span className="hidden sm:inline">{stageMeta[s].label}</span>
+                <span className={`hidden sm:inline ${skipped ? 'line-through' : ''}`}>{stageMeta[s].label}</span>
               </div>
               {i < 3 && <div className="w-4 h-px bg-slate-200" />}
             </React.Fragment>
@@ -197,11 +207,16 @@ const TutorView: React.FC<TutorViewProps> = ({ existingFronts, onStudyMaterial, 
             </div>
           </div>
 
-          <div className="flex justify-between">
+          <div className="flex items-center justify-between">
             <button onClick={onExit} className="px-4 py-2 text-slate-500 hover:text-slate-700 font-medium">Cancel</button>
-            <button onClick={begin} disabled={sourceEmpty || busy} className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-700 disabled:bg-slate-300 transition-colors">
-              {busy ? <><Loader2 size={18} className="animate-spin" /> Preparing…</> : <>Begin <ArrowRight size={18} /></>}
-            </button>
+            <div className="flex items-center gap-2">
+              <button onClick={skipRecall} disabled={sourceEmpty || busy} className="flex items-center gap-1.5 px-4 py-2.5 text-slate-500 hover:text-indigo-600 font-medium disabled:opacity-40 disabled:pointer-events-none transition-colors" title="Go straight to studying without the recall step">
+                <SkipForward size={16} /> Skip recall
+              </button>
+              <button onClick={begin} disabled={sourceEmpty || busy} className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-700 disabled:bg-slate-300 transition-colors">
+                {busy ? <><Loader2 size={18} className="animate-spin" /> Preparing…</> : <>Begin <ArrowRight size={18} /></>}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -243,11 +258,16 @@ const TutorView: React.FC<TutorViewProps> = ({ existingFronts, onStudyMaterial, 
             </div>
           )}
 
-          <div className="flex justify-between">
+          <div className="flex items-center justify-between">
             <button onClick={() => setStage('source')} className="flex items-center gap-1.5 px-4 py-2 text-slate-500 hover:text-slate-700 font-medium"><ArrowLeft size={16} /> Back</button>
-            <button onClick={startStudying} disabled={busy} className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-700 disabled:bg-slate-300 transition-colors">
-              {busy ? <><Loader2 size={18} className="animate-spin" /> Building notes…</> : <>Start studying <ArrowRight size={18} /></>}
-            </button>
+            <div className="flex items-center gap-2">
+              <button onClick={skipRecall} disabled={busy} className="flex items-center gap-1.5 px-4 py-2.5 text-slate-500 hover:text-indigo-600 font-medium disabled:opacity-40 disabled:pointer-events-none transition-colors" title="Skip grading and go straight to studying">
+                <SkipForward size={16} /> Skip
+              </button>
+              <button onClick={startStudying} disabled={busy} className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-700 disabled:bg-slate-300 transition-colors">
+                {busy ? <><Loader2 size={18} className="animate-spin" /> Building notes…</> : <>Start studying <ArrowRight size={18} /></>}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -258,15 +278,25 @@ const TutorView: React.FC<TutorViewProps> = ({ existingFronts, onStudyMaterial, 
           <div className="text-center max-w-xl mx-auto">
             <div className="inline-flex bg-indigo-100 text-indigo-600 p-3 rounded-2xl mb-3"><Sparkles size={28} /></div>
             <h2 className="text-2xl font-bold text-slate-900 mb-2">Study the material</h2>
-            <p className="text-slate-600">Here are your generated notes (also saved to your session). Read through them, then grade your earlier recall against what you just learned.</p>
+            <p className="text-slate-600">
+              {recallSkipped
+                ? 'Here are your generated notes, saved to your session. You skipped the recall step, so there’s nothing to grade.'
+                : 'Here are your generated notes (also saved to your session). Read through them, then grade your earlier recall against what you just learned.'}
+            </p>
           </div>
 
           <NotesView markdown={studyMarkdown} />
 
           <div className="flex justify-end">
-            <button onClick={gradeRecall} disabled={busy} className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-700 disabled:bg-slate-300 transition-colors">
-              {busy ? <><Loader2 size={18} className="animate-spin" /> Grading…</> : <>I've studied — grade my recall <ArrowRight size={18} /></>}
-            </button>
+            {recallSkipped ? (
+              <button onClick={onExit} className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-700 transition-colors">
+                Done <ArrowRight size={18} />
+              </button>
+            ) : (
+              <button onClick={gradeRecall} disabled={busy} className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 text-white rounded-xl font-semibold hover:bg-indigo-700 disabled:bg-slate-300 transition-colors">
+                {busy ? <><Loader2 size={18} className="animate-spin" /> Grading…</> : <>I've studied — grade my recall <ArrowRight size={18} /></>}
+              </button>
+            )}
           </div>
         </div>
       )}

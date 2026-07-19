@@ -8,7 +8,8 @@ A personal study companion that turns whatever you're studying into structured n
 - **Multiple input types.** PDFs, images, pasted text, and YouTube links all work alongside screen capture.
 - **Structured notes.** Notes come back in a consistent sectioned format (summary, core concepts, definitions, examples) rendered as clean markdown.
 - **Spaced-repetition flashcards.** Cards are scheduled with the SM-2 algorithm. Failed cards stay due for same-session relearning, and your deck persists locally between sessions.
-- **Tutor mode.** Active-recall study loop: before reading new material you brain-dump what you already know and attempt a few AI-generated pre-questions cold (the pretesting effect), then study, then the AI grades your recall against the source into three buckets — knew correctly, believed wrongly, didn't know — and adds gap-targeted flashcards to your deck (misconceptions weighted hardest for repeated testing).
+- **Subjects & sessions.** Organize study material by topic: create a **subject** (e.g. "AI Agents") and give it as many named **sessions** as you like (e.g. "Intro", "Multi-agent systems"). Each session keeps its own notes, flashcard deck, and review schedule. The home screen shows every subject with live counts of sessions, cards, and cards due for review.
+- **Tutor mode.** Active-recall study loop: before reading new material you brain-dump what you already know and attempt a few AI-generated pre-questions cold (the pretesting effect), then study, then the AI grades your recall against the source into three buckets — knew correctly, believed wrongly, didn't know — and adds gap-targeted flashcards to your deck (misconceptions weighted hardest for repeated testing). The recall step is skippable if you just want the notes.
 - **Fact verification.** An on-demand second AI pass reviews your notes and flashcards for likely misinformation — suspect passages get highlighted inline with an explanation, and questionable cards get a "Check accuracy" badge. (It checks against the model's general knowledge, so it's a plausibility check, not source verification.) You can point the check at a *different* provider than the one that generated the notes, so it won't share the same blind spots.
 - **Editing.** Notes are editable as raw markdown, and flashcards can be edited, deleted, or added by hand — manual cards enter the same review schedule as generated ones.
 - **Export.** Download your notes as Markdown (drops straight into Obsidian) or plain text, and your flashcards as CSV for Anki.
@@ -16,6 +17,14 @@ A personal study companion that turns whatever you're studying into structured n
 - **Graceful degradation.** If the active provider can't handle an input type (say, audio on a non-Gemini model), the server strips it and warns you instead of failing the generation.
 
 ## Screenshots
+
+**Your subjects** — a home screen of topics, each with live study stats:
+
+![Subjects home](screenshots/library-subjects.png)
+
+**Inside a subject** — its sessions, each an independent study set:
+
+![Sessions in a subject](screenshots/library-sessions.png)
 
 **Live capture** — share your screen and StudySync snapshots what you read:
 
